@@ -1,0 +1,73 @@
+# Local development — hot reload, source mounts, Vite dev server.
+#   docker compose -f docker-compose.dev.yml up -d
+#   docker compose -f docker-compose.dev.yml --profile mcp up -d mcp
+name: manual-web-dev
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./backend/data:/app/data
+      - ./mcp:/mcp:ro
+    environment:
+      - APP_ENV=development
+      - SECRET_KEY=${SECRET_KEY:-dev-local-secret-key-min-32-chars!!}
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///data/app.db}
+      - DEFAULT_LOCALE=${DEFAULT_LOCALE:-ko}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://frontend:5173}
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+      - DEFAULT_LOCALE=${DEFAULT_LOCALE:-ko}
+    depends_on:
+      - backend
+
+  mcp:
+    profiles: ["mcp"]
+    build:
+      context: ./mcp
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    ports:
+      - "${MCP_PORT:-8001}:8001"
+    environment:
+      - MANUAL_WEB_API_URL=http://backend:8000
+      - MANUAL_WEB_EMAIL=${MCP_ADMIN_EMAIL:-mcp-admin@manual.local}
+      - MANUAL_WEB_PASSWORD=${MCP_ADMIN_PASSWORD:-mcp-dev-password-min-16-chars}
+      - MCP_ADMIN_EMAIL=${MCP_ADMIN_EMAIL:-mcp-admin@manual.local}
+      - MCP_ADMIN_PASSWORD=${MCP_ADMIN_PASSWORD:-mcp-dev-password-min-16-chars}
+      - MCP_ADMIN_NAME=${MCP_ADMIN_NAME:-MCP Admin}
+      - MCP_BOOTSTRAP_PRODUCT_NAME=${MCP_BOOTSTRAP_PRODUCT_NAME:-MCP Workspace}
+      - MCP_BOOTSTRAP_PRODUCT_SLUG=${MCP_BOOTSTRAP_PRODUCT_SLUG:-mcp-workspace}
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8001
+      - MCP_TRANSPORT=sse
+    volumes:
+      - ./:/workspace:ro
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  frontend_node_modules:
